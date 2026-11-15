@@ -1,0 +1,1289 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>CYBER REFLEX // NEURAL BENCHMARK HUD</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap');
+
+  :root {
+    --bg-void: #030308;
+    --bg-panel: rgba(12, 14, 24, 0.78);
+    --cyan: #00f3ff;
+    --cyan-dim: rgba(0, 243, 255, 0.25);
+    --pink: #ff00ea;
+    --pink-dim: rgba(255, 0, 234, 0.25);
+    --yellow: #fcee0a;
+    --yellow-dim: rgba(252, 238, 10, 0.25);
+    --red: #ff003c;
+    --red-dim: rgba(255, 0, 60, 0.3);
+    --green: #00ff66;
+    --green-dim: rgba(0, 255, 102, 0.3);
+    --white: #f4f6fb;
+    --font-display: 'Orbitron', sans-serif;
+    --font-mono: 'Share Tech Mono', monospace;
+  }
+
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html, body {
+    width: 100%;
+    height: 100%;
+    background-color: var(--bg-void);
+    color: var(--white);
+    font-family: var(--font-mono);
+    overflow: hidden;
+    position: relative;
+  }
+
+  /* CRT Scanlines & Vignette */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%),
+                linear-gradient(90deg, rgba(255, 0, 0, 0.05), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.05));
+    background-size: 100% 3px, 6px 100%;
+    z-index: 9998;
+    pointer-events: none;
+  }
+
+  body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background: radial-gradient(circle, rgba(0,0,0,0) 60%, rgba(0,0,0,0.75) 100%);
+    z-index: 9999;
+    pointer-events: none;
+  }
+
+  /* Background Grid */
+  .cyber-grid {
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0, 243, 255, 0.06) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0, 243, 255, 0.06) 1px, transparent 1px);
+    background-size: 40px 40px;
+    z-index: 0;
+    pointer-events: none;
+  }
+
+  #fx-canvas {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1;
+    pointer-events: none;
+  }
+
+  #app {
+    position: relative;
+    z-index: 10;
+    width: 100%;
+    height: 100%;
+    max-width: 900px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    padding: 16px;
+  }
+
+  /* Top HUD Bar */
+  .hud-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 16px;
+    background: var(--bg-panel);
+    border: 1px solid var(--cyan-dim);
+    border-left: 4px solid var(--cyan);
+    backdrop-filter: blur(10px);
+    margin-bottom: 12px;
+    clip-path: polygon(0 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%);
+  }
+
+  .hud-brand {
+    font-family: var(--font-display);
+    font-weight: 900;
+    font-size: 1.1rem;
+    letter-spacing: 0.12em;
+    color: var(--cyan);
+    text-shadow: 0 0 10px var(--cyan);
+  }
+
+  .hud-progress {
+    display: flex;
+    gap: 6px;
+  }
+
+  .step-dot {
+    width: 24px;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.15);
+    transition: all 0.3s ease;
+  }
+
+  .step-dot.active {
+    background: var(--yellow);
+    box-shadow: 0 0 10px var(--yellow);
+  }
+
+  .step-dot.done {
+    background: var(--cyan);
+    box-shadow: 0 0 8px var(--cyan);
+  }
+
+  /* Main Stage Container */
+  .stage-container {
+    flex: 1;
+    position: relative;
+    background: var(--bg-panel);
+    border: 1px solid var(--cyan-dim);
+    backdrop-filter: blur(12px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: inset 0 0 30px rgba(0, 243, 255, 0.05), 0 10px 40px rgba(0, 0, 0, 0.8);
+  }
+
+  /* HUD Corner Brackets */
+  .stage-container::before, .stage-container::after {
+    content: "";
+    position: absolute;
+    width: 18px;
+    height: 18px;
+    border: 2px solid var(--cyan);
+    pointer-events: none;
+    z-index: 20;
+  }
+  .stage-container::before { top: 6px; left: 6px; border-right: none; border-bottom: none; }
+  .stage-container::after { bottom: 6px; right: 6px; border-left: none; border-top: none; }
+
+  /* Screen Views */
+  .screen {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    opacity: 0;
+    pointer-events: none;
+    transform: scale(0.98);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+  }
+
+  .screen.active {
+    opacity: 1;
+    pointer-events: auto;
+    transform: scale(1);
+  }
+
+  /* Typography */
+  h1.title-main {
+    font-family: var(--font-display);
+    font-size: clamp(1.8rem, 5vw, 3.2rem);
+    font-weight: 900;
+    text-align: center;
+    letter-spacing: 0.1em;
+    color: var(--white);
+    text-shadow: 0 0 15px var(--cyan), 0 0 30px var(--pink);
+    margin-bottom: 8px;
+  }
+
+  .subtitle {
+    color: var(--pink);
+    letter-spacing: 0.25em;
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    margin-bottom: 28px;
+    text-align: center;
+  }
+
+  /* Buttons */
+  .cyber-btn {
+    position: relative;
+    background: rgba(0, 243, 255, 0.1);
+    border: 1px solid var(--cyan);
+    color: var(--cyan);
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 1.1rem;
+    letter-spacing: 0.18em;
+    padding: 16px 36px;
+    cursor: pointer;
+    text-transform: uppercase;
+    clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
+    transition: all 0.2s ease;
+    box-shadow: 0 0 15px var(--cyan-dim);
+  }
+
+  .cyber-btn:hover {
+    background: var(--cyan);
+    color: var(--bg-void);
+    box-shadow: 0 0 25px var(--cyan);
+    transform: translateY(-2px);
+  }
+
+  .cyber-btn:active {
+    transform: scale(0.96);
+  }
+
+  .cyber-btn.pink {
+    border-color: var(--pink);
+    color: var(--pink);
+    background: rgba(255, 0, 234, 0.1);
+    box-shadow: 0 0 15px var(--pink-dim);
+  }
+
+  .cyber-btn.pink:hover {
+    background: var(--pink);
+    color: var(--bg-void);
+    box-shadow: 0 0 25px var(--pink);
+  }
+
+  /* Test List Preview on Title */
+  .protocol-list {
+    width: 100%;
+    max-width: 480px;
+    display: grid;
+    gap: 8px;
+    margin-bottom: 32px;
+  }
+
+  .protocol-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px 14px;
+    background: rgba(255, 255, 255, 0.03);
+    border-left: 3px solid var(--pink);
+    font-size: 0.9rem;
+  }
+
+  .protocol-item span:first-child { color: var(--cyan); font-weight: bold; }
+  .protocol-item span:last-child { color: #aaa; }
+
+  /* Game Interactive Zone */
+  #game-zone {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background-color 0.1s ease;
+  }
+
+  #game-zone.state-wait { background: rgba(255, 0, 60, 0.14); }
+  #game-zone.state-go { background: rgba(0, 255, 102, 0.22); }
+
+  .game-instruction {
+    position: absolute;
+    top: 20px;
+    left: 0;
+    right: 0;
+    text-align: center;
+    pointer-events: none;
+    z-index: 15;
+  }
+
+  .test-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    background: rgba(0, 243, 255, 0.15);
+    border: 1px solid var(--cyan);
+    color: var(--cyan);
+    font-size: 0.8rem;
+    letter-spacing: 0.15em;
+    margin-bottom: 6px;
+  }
+
+  .test-title {
+    font-family: var(--font-display);
+    font-size: 1.3rem;
+    font-weight: 700;
+    text-shadow: 0 0 10px rgba(0,0,0,0.8);
+  }
+
+  .big-prompt {
+    font-family: var(--font-display);
+    font-size: clamp(2rem, 7vw, 4rem);
+    font-weight: 900;
+    text-align: center;
+    letter-spacing: 0.1em;
+    pointer-events: none;
+  }
+
+  .sub-prompt {
+    font-size: 1rem;
+    color: #ccc;
+    margin-top: 10px;
+    pointer-events: none;
+    text-align: center;
+  }
+
+  /* Aim Target (Test 2) */
+  .aim-target {
+    position: absolute;
+    width: 68px;
+    height: 68px;
+    border-radius: 50%;
+    border: 3px solid var(--pink);
+    background: radial-gradient(circle, rgba(255,0,234,0.6) 0%, rgba(255,0,234,0.1) 70%);
+    box-shadow: 0 0 20px var(--pink), inset 0 0 12px var(--pink);
+    transform: translate(-50%, -50%);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: target-pop 0.15s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+  }
+  .aim-target::after {
+    content: "";
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--white);
+    box-shadow: 0 0 10px var(--white);
+  }
+
+  /* Moving Sniper Target (Test 3) */
+  .sniper-track {
+    position: relative;
+    width: 90%;
+    max-width: 600px;
+    height: 100px;
+    border-top: 1px dashed var(--cyan-dim);
+    border-bottom: 1px dashed var(--cyan-dim);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .sniper-zone {
+    width: 14px;
+    height: 100%;
+    background: rgba(0, 255, 102, 0.25);
+    border-left: 2px solid var(--green);
+    border-right: 2px solid var(--green);
+    box-shadow: 0 0 15px var(--green-dim);
+  }
+
+  .sniper-bullet {
+    position: absolute;
+    top: 50%;
+    width: 24px;
+    height: 24px;
+    background: var(--yellow);
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    box-shadow: 0 0 20px var(--yellow), 0 0 40px var(--red);
+  }
+
+  /* Flash Memory UI (Test 4) */
+  .memory-display {
+    font-family: var(--font-display);
+    font-size: clamp(2.5rem, 8vw, 4.5rem);
+    font-weight: 900;
+    letter-spacing: 0.2em;
+    color: var(--yellow);
+    text-shadow: 0 0 20px var(--yellow);
+    margin-bottom: 20px;
+    min-height: 70px;
+  }
+
+  .keypad {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    width: 100%;
+    max-width: 300px;
+  }
+
+  .key-btn {
+    padding: 16px;
+    font-family: var(--font-display);
+    font-size: 1.3rem;
+    font-weight: bold;
+    background: rgba(0, 243, 255, 0.08);
+    border: 1px solid var(--cyan-dim);
+    color: var(--white);
+    cursor: pointer;
+    transition: 0.15s;
+  }
+
+  .key-btn:active {
+    background: var(--cyan);
+    color: var(--bg-void);
+  }
+
+  /* CPS Burst (Test 5) */
+  .cps-ring {
+    width: 180px;
+    height: 180px;
+    border-radius: 50%;
+    border: 6px solid var(--cyan);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 0 30px var(--cyan-dim), inset 0 0 25px var(--cyan-dim);
+    transition: transform 0.05s ease;
+  }
+
+  .cps-count {
+    font-family: var(--font-display);
+    font-size: 3.2rem;
+    font-weight: 900;
+    color: var(--white);
+  }
+
+  /* Result Screen */
+  .result-scroll {
+    width: 100%;
+    max-width: 640px;
+    max-height: 100%;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 10px;
+  }
+
+  .rank-box {
+    text-align: center;
+    margin-bottom: 20px;
+    padding: 16px 32px;
+    border: 2px solid var(--cyan);
+    background: rgba(0, 243, 255, 0.06);
+    box-shadow: 0 0 30px var(--cyan-dim);
+    position: relative;
+  }
+
+  .rank-label {
+    font-size: 0.85rem;
+    letter-spacing: 0.25em;
+    color: #aaa;
+  }
+
+  .rank-letter {
+    font-family: var(--font-display);
+    font-size: 4.5rem;
+    font-weight: 900;
+    line-height: 1.1;
+    text-shadow: 0 0 25px currentColor;
+  }
+
+  .rank-title {
+    font-family: var(--font-display);
+    font-size: 1.1rem;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    margin-top: 4px;
+  }
+
+  .radar-wrap {
+    width: 240px;
+    height: 240px;
+    margin: 6px 0 16px;
+  }
+
+  .metrics-grid {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 10px;
+    margin-bottom: 22px;
+  }
+
+  .metric-card {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-left: 3px solid var(--cyan);
+    padding: 10px 12px;
+  }
+
+  .metric-name {
+    font-size: 0.75rem;
+    color: #999;
+    letter-spacing: 0.1em;
+  }
+
+  .metric-val {
+    font-family: var(--font-display);
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: var(--white);
+    margin-top: 2px;
+  }
+
+  .result-actions {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  /* Animations */
+  @keyframes target-pop {
+    0% { transform: translate(-50%, -50%) scale(0.2); opacity: 0; }
+    100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+  }
+
+  @keyframes shake {
+    0%, 100% { transform: translate(0, 0); }
+    20% { transform: translate(-6px, 4px); }
+    40% { transform: translate(6px, -4px); }
+    60% { transform: translate(-4px, -2px); }
+    80% { transform: translate(4px, 2px); }
+  }
+
+  .shake {
+    animation: shake 0.3s ease-in-out;
+  }
+</style>
+</head>
+<body>
+
+<div class="cyber-grid"></div>
+<canvas id="fx-canvas"></canvas>
+
+<div id="app">
+  <!-- Top HUD Header -->
+  <header class="hud-header">
+    <div class="hud-brand">NEURAL // BENCHMARK</div>
+    <div class="hud-progress" id="progress-dots">
+      <div class="step-dot"></div>
+      <div class="step-dot"></div>
+      <div class="step-dot"></div>
+      <div class="step-dot"></div>
+      <div class="step-dot"></div>
+    </div>
+  </header>
+
+  <main class="stage-container" id="stage">
+    <!-- SCREEN 1: TITLE -->
+    <section class="screen active" id="screen-title">
+      <h1 class="title-main">CYBER REFLEX</h1>
+      <div class="subtitle">5-Stage Human Neural Benchmark</div>
+
+      <div class="protocol-list">
+        <div class="protocol-item"><span>01 // FLASH IGNITION</span><span>純粋反応速度 (ms)</span></div>
+        <div class="protocol-item"><span>02 // MATRIX AIM</span><span>空間認識・エイム精度</span></div>
+        <div class="protocol-item"><span>03 // RAIL SNIPER</span><span>動体視力・タイミング</span></div>
+        <div class="protocol-item"><span>04 // GHOST CIPHER</span><span>瞬間記憶・短期メモリ</span></div>
+        <div class="protocol-item"><span>05 // OVERCLOCK TAP</span><span>指先連打・瞬発力 (CPS)</span></div>
+      </div>
+
+      <button class="cyber-btn" id="btn-start-bench">INITIALIZE TEST</button>
+    </section>
+
+    <!-- SCREEN 2: ACTIVE GAME -->
+    <section class="screen" id="screen-game">
+      <div class="game-instruction">
+        <div class="test-badge" id="hud-test-num">PROTOCOL 01 / 05</div>
+        <div class="test-title" id="hud-test-name">FLASH IGNITION</div>
+      </div>
+      <div id="game-zone"></div>
+    </section>
+
+    <!-- SCREEN 3: RESULTS -->
+    <section class="screen" id="screen-result">
+      <div class="result-scroll">
+        <div class="rank-box" id="rank-box">
+          <div class="rank-label">NEURAL SYNCHRONIZATION RANK</div>
+          <div class="rank-letter" id="res-rank">S+</div>
+          <div class="rank-title" id="res-title">CYBERNETIC OVERLORD</div>
+        </div>
+
+        <div class="radar-wrap">
+          <canvas id="radar-canvas" width="240" height="240"></canvas>
+        </div>
+
+        <div class="metrics-grid" id="metrics-grid"></div>
+
+        <div class="result-actions">
+          <button class="cyber-btn pink" id="btn-save-card">📸 SAVE ID CARD</button>
+          <button class="cyber-btn" id="btn-retry">↻ REBOOT TEST</button>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+/* ==========================================================================
+   1. SYNTHESIZER AUDIO ENGINE (Web Audio API)
+   ========================================================================== */
+const AudioFX = {
+  ctx: null,
+  init() {
+    if (!this.ctx) {
+      this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (this.ctx.state === 'suspended') this.ctx.resume();
+  },
+  tone(freq, type = 'sine', duration = 0.1, vol = 0.2, slideTo = null) {
+    this.init();
+    const t = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, t);
+    if (slideTo) osc.frequency.exponentialRampToValueAtTime(slideTo, t + duration);
+
+    gain.gain.setValueAtTime(vol, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + duration);
+
+    osc.connect(gain);
+    gain.connect(this.ctx.destination);
+    osc.start(t);
+    osc.stop(t + duration);
+  },
+  hit() { this.tone(880, 'triangle', 0.08, 0.25, 1320); },
+  click() { this.tone(520, 'sine', 0.05, 0.18, 780); },
+  error() { this.tone(160, 'sawtooth', 0.28, 0.3, 65); },
+  go() { this.tone(660, 'square', 0.18, 0.22, 1320); },
+  clear() {
+    [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => {
+      setTimeout(() => this.tone(f, 'triangle', 0.25, 0.2), i * 75);
+    });
+  }
+};
+
+/* ==========================================================================
+   2. PARTICLE & SHOCKWAVE VFX ENGINE
+   ========================================================================== */
+const fxCanvas = document.getElementById('fx-canvas');
+const fxCtx = fxCanvas.getContext('2d');
+let particles = [];
+let rings = [];
+
+function resizeFX() {
+  fxCanvas.width = window.innerWidth;
+  fxCanvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resizeFX);
+resizeFX();
+
+function spawnHitFX(x, y, color = '#00f3ff', count = 18) {
+  rings.push({ x, y, r: 8, maxR: 90, alpha: 1, color });
+  for (let i = 0; i < count; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const spd = 2 + Math.random() * 8;
+    particles.push({
+      x, y,
+      vx: Math.cos(a) * spd,
+      vy: Math.sin(a) * spd,
+      life: 1,
+      decay: 0.03 + Math.random() * 0.03,
+      size: 2 + Math.random() * 3,
+      color
+    });
+  }
+}
+
+function triggerShake() {
+  const stage = document.getElementById('stage');
+  stage.classList.remove('shake');
+  void stage.offsetWidth;
+  stage.classList.add('shake');
+}
+
+function loopFX() {
+  fxCtx.clearRect(0, 0, fxCanvas.width, fxCanvas.height);
+
+  for (let i = rings.length - 1; i >= 0; i--) {
+    const rg = rings[i];
+    rg.r += (rg.maxR - rg.r) * 0.16;
+    rg.alpha -= 0.04;
+    if (rg.alpha <= 0) { rings.splice(i, 1); continue; }
+    fxCtx.save();
+    fxCtx.beginPath();
+    fxCtx.arc(rg.x, rg.y, rg.r, 0, Math.PI * 2);
+    fxCtx.strokeStyle = rg.color;
+    fxCtx.lineWidth = 3 * rg.alpha;
+    fxCtx.shadowBlur = 15;
+    fxCtx.shadowColor = rg.color;
+    fxCtx.globalAlpha = rg.alpha;
+    fxCtx.stroke();
+    fxCtx.restore();
+  }
+
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vx *= 0.94;
+    p.vy *= 0.94;
+    p.life -= p.decay;
+    if (p.life <= 0) { particles.splice(i, 1); continue; }
+    fxCtx.save();
+    fxCtx.fillStyle = p.color;
+    fxCtx.shadowBlur = 10;
+    fxCtx.shadowColor = p.color;
+    fxCtx.globalAlpha = p.life;
+    fxCtx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+    fxCtx.restore();
+  }
+
+  requestAnimationFrame(loopFX);
+}
+loopFX();
+
+/* ==========================================================================
+   3. BENCHMARK CONTROLLER & 5 MINI-GAMES
+   ========================================================================== */
+const gameZone = document.getElementById('game-zone');
+const progressDots = document.querySelectorAll('.step-dot');
+
+const Benchmark = {
+  results: {
+    reflexMs: 0,
+    aimMs: 0,
+    sniperDiffMs: 0,
+    memoryDigits: 0,
+    cps: 0
+  },
+  scores: [0, 0, 0, 0, 0], // 0 - 100 normalized per test
+
+  showScreen(id) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+  },
+
+  setStep(idx, name) {
+    progressDots.forEach((d, i) => {
+      d.className = 'step-dot';
+      if (i < idx) d.classList.add('done');
+      else if (i === idx) d.classList.add('active');
+    });
+    document.getElementById('hud-test-num').textContent = `PROTOCOL 0${idx + 1} / 05`;
+    document.getElementById('hud-test-name').textContent = name;
+    gameZone.className = '';
+    gameZone.innerHTML = '';
+    gameZone.onpointerdown = null;
+  },
+
+  start() {
+    AudioFX.init();
+    AudioFX.click();
+    this.showScreen('screen-game');
+    this.runTest1();
+  },
+
+  /* ------------------------------------------------------------------------
+     TEST 1: FLASH IGNITION (Pure Reaction Time - Best of 3)
+     ------------------------------------------------------------------------ */
+  runTest1() {
+    this.setStep(0, 'FLASH IGNITION');
+    let round = 0;
+    const maxRounds = 3;
+    let times = [];
+    let state = 'idle'; // idle, waiting, ready
+    let timer = null;
+    let startTime = 0;
+
+    const nextRound = () => {
+      if (round >= maxRounds) {
+        const avg = Math.round(times.reduce((a, b) => a + b, 0) / times.length);
+        this.results.reflexMs = avg;
+        // 150ms = 100pts, 450ms = 20pts
+        this.scores[0] = Math.max(10, Math.min(100, Math.round(100 - (avg - 160) * 0.32)));
+        AudioFX.clear();
+        setTimeout(() => this.runTest2(), 600);
+        return;
+      }
+
+      state = 'waiting';
+      gameZone.className = 'state-wait';
+      gameZone.innerHTML = `
+        <div class="big-prompt" style="color:var(--red);text-shadow:0 0 20px var(--red);">WAIT...</div>
+        <div class="sub-prompt">画面が緑に変わった瞬間にタップ (${round + 1}/${maxRounds})</div>
+      `;
+
+      const delay = 1400 + Math.random() * 2400;
+      timer = setTimeout(() => {
+        state = 'ready';
+        startTime = performance.now();
+        gameZone.className = 'state-go';
+        AudioFX.go();
+        gameZone.innerHTML = `
+          <div class="big-prompt" style="color:var(--green);text-shadow:0 0 25px var(--green);">TAP NOW!</div>
+          <div class="sub-prompt">FIRE!!</div>
+        `;
+      }, delay);
+    };
+
+    gameZone.onpointerdown = (e) => {
+      if (state === 'waiting') {
+        clearTimeout(timer);
+        AudioFX.error();
+        triggerShake();
+        spawnHitFX(e.clientX, e.clientY, '#ff003c', 25);
+        gameZone.className = '';
+        gameZone.innerHTML = `
+          <div class="big-prompt" style="color:var(--yellow);">TOO EARLY!</div>
+          <div class="sub-prompt">フライング！タップしてやり直し</div>
+        `;
+        state = 'foul';
+      } else if (state === 'foul') {
+        nextRound();
+      } else if (state === 'ready') {
+        const diff = Math.round(performance.now() - startTime);
+        times.push(diff);
+        round++;
+        state = 'cooldown';
+        AudioFX.hit();
+        spawnHitFX(e.clientX, e.clientY, '#00ff66', 25);
+        gameZone.className = '';
+        gameZone.innerHTML = `
+          <div class="big-prompt" style="color:var(--cyan);">${diff} ms</div>
+          <div class="sub-prompt">${round < maxRounds ? '次のラウンドへ...' : '計測完了！'}</div>
+        `;
+        setTimeout(nextRound, 750);
+      }
+    };
+
+    nextRound();
+  },
+
+  /* ------------------------------------------------------------------------
+     TEST 2: MATRIX AIM (Hit 8 Targets as fast as possible)
+     ------------------------------------------------------------------------ */
+  runTest2() {
+    this.setStep(1, 'MATRIX AIM');
+    let remaining = 8;
+    let startTime = 0;
+    let started = false;
+
+    const spawnTarget = () => {
+      gameZone.innerHTML = `<div class="sub-prompt" style="position:absolute;bottom:20px;">残りターゲット: <b style="color:var(--pink);font-size:1.3rem;">${remaining}</b></div>`;
+      const rect = gameZone.getBoundingClientRect();
+      const pad = 65;
+      const x = pad + Math.random() * (rect.width - pad * 2);
+      const y = pad + 30 + Math.random() * (rect.height - pad * 2 - 30);
+
+      const target = document.createElement('div');
+      target.className = 'aim-target';
+      target.style.left = `${x}px`;
+      target.style.top = `${y}px`;
+
+      target.onpointerdown = (e) => {
+        e.stopPropagation();
+        if (!started) {
+          started = true;
+          startTime = performance.now();
+        }
+        AudioFX.hit();
+        spawnHitFX(e.clientX, e.clientY, '#ff00ea', 20);
+        remaining--;
+        if (remaining <= 0) {
+          const totalMs = Math.round(performance.now() - startTime);
+          const avgPerTarget = Math.round(totalMs / 8);
+          this.results.aimMs = avgPerTarget;
+          // 280ms/target = 100pts, 750ms/target = 20pts
+          this.scores[1] = Math.max(10, Math.min(100, Math.round(100 - (avgPerTarget - 280) * 0.18)));
+          AudioFX.clear();
+          gameZone.innerHTML = `<div class="big-prompt" style="color:var(--pink);">${avgPerTarget} ms/hit</div>`;
+          setTimeout(() => this.runTest3(), 800);
+        } else {
+          spawnTarget();
+        }
+      };
+
+      gameZone.appendChild(target);
+    };
+
+    spawnTarget();
+  },
+
+  /* ------------------------------------------------------------------------
+     TEST 3: RAIL SNIPER (Dynamic Vision Timing - 3 Shots)
+     ------------------------------------------------------------------------ */
+  runTest3() {
+    this.setStep(2, 'RAIL SNIPER');
+    let shot = 0;
+    const maxShots = 3;
+    let diffs = [];
+    let animId = null;
+    let active = false;
+    let pos = 0; // -1 to 1
+    let dir = 1;
+    let speed = 0.032;
+
+    gameZone.innerHTML = `
+      <div class="sniper-track" id="s-track">
+        <div class="sniper-zone"></div>
+        <div class="sniper-bullet" id="s-bullet"></div>
+      </div>
+      <div class="sub-prompt" id="s-info" style="margin-top:24px;">緑のレーザーラインに重なった瞬間にタップ (1/3)</div>
+    `;
+
+    const bullet = document.getElementById('s-bullet');
+    const info = document.getElementById('s-info');
+
+    const startShot = () => {
+      if (shot >= maxShots) {
+        cancelAnimationFrame(animId);
+        const avgDiff = Math.round(diffs.reduce((a, b) => a + b, 0) / diffs.length);
+        this.results.sniperDiffMs = avgDiff;
+        // 0ms error = 100pts, 120ms error = 15pts
+        this.scores[2] = Math.max(10, Math.min(100, Math.round(100 - avgDiff * 0.75)));
+        AudioFX.clear();
+        setTimeout(() => this.runTest4(), 700);
+        return;
+      }
+      pos = (shot % 2 === 0) ? -0.95 : 0.95;
+      dir = (shot % 2 === 0) ? 1 : -1;
+      speed = 0.032 + shot * 0.008;
+      active = true;
+      info.textContent = `緑のレーザーラインに重なった瞬間にタップ (${shot + 1}/${maxShots})`;
+    };
+
+    const tick = () => {
+      if (active) {
+        pos += dir * speed;
+        if (pos >= 1) { pos = 1; dir = -1; }
+        if (pos <= -1) { pos = -1; dir = 1; }
+        bullet.style.left = `${(pos + 1) * 50}%`;
+      }
+      animId = requestAnimationFrame(tick);
+    };
+    tick();
+
+    gameZone.onpointerdown = (e) => {
+      if (!active) return;
+      active = false;
+      // Convert position error to equivalent ms
+      const errMs = Math.round((Math.abs(pos) / speed) * 16.6);
+      diffs.push(errMs);
+      shot++;
+
+      const isBullseye = errMs <= 25;
+      if (isBullseye) {
+        AudioFX.go();
+        spawnHitFX(e.clientX, e.clientY, '#00ff66', 28);
+        info.innerHTML = `<b style="color:var(--green);font-size:1.3rem;">CRITICAL HIT! 誤差 ${errMs} ms</b>`;
+      } else {
+        AudioFX.hit();
+        triggerShake();
+        spawnHitFX(e.clientX, e.clientY, '#fcee0a', 16);
+        info.innerHTML = `<b style="color:var(--yellow);font-size:1.2rem;">誤差 ${errMs} ms</b>`;
+      }
+
+      setTimeout(startShot, 750);
+    };
+
+    startShot();
+  },
+
+  /* ------------------------------------------------------------------------
+     TEST 4: GHOST CIPHER (Flash Number Memory: 4 -> 6 -> 8 digits)
+     ------------------------------------------------------------------------ */
+  runTest4() {
+    this.setStep(3, 'GHOST CIPHER');
+    const levels = [4, 6, 8];
+    let lvlIdx = 0;
+    let maxCleared = 0;
+
+    const runLevel = () => {
+      if (lvlIdx >= levels.length) {
+        finishMemory();
+        return;
+      }
+      const len = levels[lvlIdx];
+      let code = '';
+      for (let i = 0; i < len; i++) code += Math.floor(Math.random() * 10);
+
+      gameZone.innerHTML = `
+        <div class="sub-prompt" style="margin-bottom:10px;">一瞬表示される <b>${len}桁</b> のコードを記憶せよ</div>
+        <div class="memory-display" id="mem-num">${code}</div>
+      `;
+      AudioFX.click();
+
+      const showDuration = 750 + len * 110;
+      setTimeout(() => {
+        let input = '';
+        gameZone.innerHTML = `
+          <div class="sub-prompt" style="margin-bottom:8px;">コードを入力 (${len}桁)</div>
+          <div class="memory-display" id="mem-input" style="color:var(--cyan);">_</div>
+          <div class="keypad" id="mem-pad"></div>
+        `;
+        const disp = document.getElementById('mem-input');
+        const pad = document.getElementById('mem-pad');
+
+        const keys = ['1','2','3','4','5','6','7','8','9','C','0','OK'];
+        keys.forEach(k => {
+          const btn = document.createElement('button');
+          btn.className = 'key-btn';
+          btn.textContent = k;
+          btn.onpointerdown = (e) => {
+            e.stopPropagation();
+            if (k === 'C') {
+              input = '';
+              AudioFX.click();
+            } else if (k === 'OK') {
+              if (input === code) {
+                maxCleared = len;
+                lvlIdx++;
+                AudioFX.go();
+                spawnHitFX(e.clientX, e.clientY, '#00ff66', 25);
+                runLevel();
+              } else {
+                AudioFX.error();
+                triggerShake();
+                finishMemory();
+              }
+              return;
+            } else {
+              if (input.length < len) {
+                input += k;
+                AudioFX.click();
+              }
+            }
+            disp.textContent = input || '_';
+          };
+          pad.appendChild(btn);
+        });
+      }, showDuration);
+    };
+
+    const finishMemory = () => {
+      this.results.memoryDigits = maxCleared;
+      const scoreMap = { 0: 20, 4: 55, 6: 80, 8: 100 };
+      this.scores[3] = scoreMap[maxCleared] || 20;
+      gameZone.innerHTML = `<div class="big-prompt" style="color:var(--yellow);">MAX ${maxCleared} DIGITS</div>`;
+      setTimeout(() => this.runTest5(), 800);
+    };
+
+    runLevel();
+  },
+
+  /* ------------------------------------------------------------------------
+     TEST 5: OVERCLOCK TAP (5-Second Burst CPS)
+     ------------------------------------------------------------------------ */
+  runTest5() {
+    this.setStep(4, 'OVERCLOCK TAP');
+    let taps = 0;
+    let started = false;
+    let timeLeft = 5.0;
+    let interval = null;
+
+    gameZone.innerHTML = `
+      <div class="cps-ring" id="cps-ring">
+        <div class="cps-count" id="cps-count">0</div>
+        <div style="font-size:0.8rem;color:var(--cyan);">TAPS</div>
+      </div>
+      <div class="sub-prompt" id="cps-timer" style="margin-top:20px;font-size:1.2rem;">最初のタップで5秒間の連打計測開始！</div>
+    `;
+
+    const ring = document.getElementById('cps-ring');
+    const countEl = document.getElementById('cps-count');
+    const timerEl = document.getElementById('cps-timer');
+
+    gameZone.onpointerdown = (e) => {
+      if (timeLeft <= 0) return;
+
+      if (!started) {
+        started = true;
+        const startT = performance.now();
+        interval = setInterval(() => {
+          const elapsed = (performance.now() - startT) / 1000;
+          timeLeft = Math.max(0, 5.0 - elapsed);
+          timerEl.innerHTML = `残り時間: <b style="color:var(--yellow);font-size:1.4rem;">${timeLeft.toFixed(2)}s</b>`;
+
+          if (timeLeft <= 0) {
+            clearInterval(interval);
+            gameZone.onpointerdown = null;
+            const cps = +(taps / 5.0).toFixed(1);
+            this.results.cps = cps;
+            // 12 CPS = 100pts, 4 CPS = 20pts
+            this.scores[4] = Math.max(10, Math.min(100, Math.round((cps - 2.5) * 10.5)));
+            AudioFX.clear();
+            timerEl.innerHTML = `<b style="color:var(--green);font-size:1.4rem;">RESULT: ${cps} CPS!</b>`;
+            setTimeout(() => this.showResults(), 950);
+          }
+        }, 30);
+      }
+
+      taps++;
+      countEl.textContent = taps;
+      ring.style.transform = 'scale(0.92)';
+      ring.style.borderColor = taps % 2 === 0 ? 'var(--cyan)' : 'var(--pink)';
+      setTimeout(() => ring.style.transform = 'scale(1)', 50);
+
+      AudioFX.tone(300 + taps * 12, 'triangle', 0.04, 0.15);
+      spawnHitFX(e.clientX, e.clientY, taps % 2 === 0 ? '#00f3ff' : '#ff00ea', 6);
+    };
+  },
+
+  /* ------------------------------------------------------------------------
+     FINAL RESULTS & RADAR CHART
+     ------------------------------------------------------------------------ */
+  showResults() {
+    progressDots.forEach(d => d.className = 'step-dot done');
+    this.showScreen('screen-result');
+
+    const totalAvg = Math.round(this.scores.reduce((a, b) => a + b, 0) / 5);
+    let rank = 'C', title = 'STANDARD HUMAN', color = '#aaaaaa';
+
+    if (totalAvg >= 92) { rank = 'S+'; title = 'CYBERNETIC OVERLORD'; color = '#fcee0a'; }
+    else if (totalAvg >= 82) { rank = 'S'; title = 'NEURAL ACE'; color = '#ff00ea'; }
+    else if (totalAvg >= 70) { rank = 'A'; title = 'CHROME RUNNER'; color = '#00f3ff'; }
+    else if (totalAvg >= 55) { rank = 'B'; title = 'STREET OPERATIVE'; color = '#00ff66'; }
+
+    const rankEl = document.getElementById('res-rank');
+    const titleEl = document.getElementById('res-title');
+    const boxEl = document.getElementById('rank-box');
+
+    rankEl.textContent = rank;
+    rankEl.style.color = color;
+    titleEl.textContent = title;
+    titleEl.style.color = color;
+    boxEl.style.borderColor = color;
+
+    // Metrics Cards
+    const grid = document.getElementById('metrics-grid');
+    grid.innerHTML = `
+      <div class="metric-card"><div class="metric-name">01 // REFLEX</div><div class="metric-val">${this.results.reflexMs} ms</div></div>
+      <div class="metric-card"><div class="metric-name">02 // MATRIX AIM</div><div class="metric-val">${this.results.aimMs} ms/hit</div></div>
+      <div class="metric-card"><div class="metric-name">03 // RAIL SNIPER</div><div class="metric-val">±${this.results.sniperDiffMs} ms</div></div>
+      <div class="metric-card"><div class="metric-name">04 // MEMORY</div><div class="metric-val">${this.results.memoryDigits} DIGITS</div></div>
+      <div class="metric-card"><div class="metric-name">05 // BURST SPEED</div><div class="metric-val">${this.results.cps} CPS</div></div>
+      <div class="metric-card" style="border-left-color:${color};"><div class="metric-name">TOTAL SCORE</div><div class="metric-val" style="color:${color};">${totalAvg} / 100</div></div>
+    `;
+
+    this.drawRadarChart(this.scores, color);
+  },
+
+  drawRadarChart(scores, mainColor) {
+    const c = document.getElementById('radar-canvas');
+    const ctx = c.getContext('2d');
+    const cx = c.width / 2, cy = c.height / 2, r = 82;
+    const labels = ['REFLEX', 'AIM', 'VISION', 'MEMORY', 'SPEED'];
+
+    ctx.clearRect(0, 0, c.width, c.height);
+
+    // Web background
+    for (let level = 1; level <= 4; level++) {
+      const lr = (r / 4) * level;
+      ctx.beginPath();
+      for (let i = 0; i < 5; i++) {
+        const ang = -Math.PI / 2 + (i * Math.PI * 2) / 5;
+        const x = cx + Math.cos(ang) * lr;
+        const y = cy + Math.sin(ang) * lr;
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+      ctx.strokeStyle = 'rgba(0, 243, 255, 0.2)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+
+    // Axes & Labels
+    ctx.font = 'bold 11px "Orbitron", sans-serif';
+    ctx.fillStyle = '#00f3ff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    for (let i = 0; i < 5; i++) {
+      const ang = -Math.PI / 2 + (i * Math.PI * 2) / 5;
+      const x = cx + Math.cos(ang) * r;
+      const y = cy + Math.sin(ang) * r;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(x, y);
+      ctx.strokeStyle = 'rgba(0, 243, 255, 0.25)';
+      ctx.stroke();
+
+      const lx = cx + Math.cos(ang) * (r + 22);
+      const ly = cy + Math.sin(ang) * (r + 22);
+      ctx.fillText(labels[i], lx, ly);
+    }
+
+    // Data Polygon
+    ctx.beginPath();
+    for (let i = 0; i < 5; i++) {
+      const val = (scores[i] / 100) * r;
+      const ang = -Math.PI / 2 + (i * Math.PI * 2) / 5;
+      const x = cx + Math.cos(ang) * val;
+      const y = cy + Math.sin(ang) * val;
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.fillStyle = mainColor + '44';
+    ctx.fill();
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = mainColor;
+    ctx.shadowBlur = 12;
+    ctx.shadowColor = mainColor;
+    ctx.stroke();
+  },
+
+  saveIDCard() {
+    AudioFX.click();
+    const c = document.createElement('canvas');
+    c.width = 800;
+    c.height = 420;
+    const ctx = c.getContext('2d');
+
+    ctx.fillStyle = '#05060d';
+    ctx.fillRect(0, 0, 800, 420);
+
+    const rank = document.getElementById('res-rank').textContent;
+    const title = document.getElementById('res-title').textContent;
+    const color = document.getElementById('res-rank').style.color || '#00f3ff';
+
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 6;
+    ctx.strokeRect(18, 18, 764, 384);
+
+    ctx.fillStyle = '#00f3ff';
+    ctx.font = 'bold 22px sans-serif';
+    ctx.fillText('CYBER REFLEX // NEURAL BENCHMARK ID', 45, 62);
+
+    ctx.fillStyle = color;
+    ctx.font = 'bold 120px sans-serif';
+    ctx.fillText(rank, 50, 195);
+
+    ctx.font = 'bold 26px sans-serif';
+    ctx.fillText(title, 50, 240);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '18px monospace';
+    ctx.fillText(`01 REFLEX : ${this.results.reflexMs} ms`, 50, 295);
+    ctx.fillText(`02 AIM    : ${this.results.aimMs} ms/hit`, 50, 325);
+    ctx.fillText(`03 SNIPER : ±${this.results.sniperDiffMs} ms`, 50, 355);
+    ctx.fillText(`04 MEMORY : ${this.results.memoryDigits} DIGITS`, 410, 295);
+    ctx.fillText(`05 BURST  : ${this.results.cps} CPS`, 410, 325);
+
+    // Copy radar chart onto card
+    const radar = document.getElementById('radar-canvas');
+    ctx.drawImage(radar, 510, 45, 230, 230);
+
+    const link = document.createElement('a');
+    link.download = `cyber_reflex_${rank}_${Date.now()}.png`;
+    link.href = c.toDataURL('image/png');
+    link.click();
+  }
+};
+
+document.getElementById('btn-start-bench').addEventListener('click', () => Benchmark.start());
+document.getElementById('btn-retry').addEventListener('click', () => Benchmark.start());
+document.getElementById('btn-save-card').addEventListener('click', () => Benchmark.saveIDCard());
+</script>
+</body>
+</html>
